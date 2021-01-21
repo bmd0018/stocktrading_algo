@@ -588,158 +588,162 @@ def test_pairs(df,fpairs,today,active_trades,trade_log,cash,sp500comp): #-------
     ticklist = list(set(ticklist))
     
     # retrieve daily stock data
-    print('Loading daily stock data...')
-    df_day = web.get_data_yahoo(ticklist,start=today)['Adj Close'].iloc[0]            
+    try:
+        print('Loading daily stock data...')
+        df_day = web.get_data_yahoo(ticklist,start=today)['Adj Close'].iloc[0]            
+        
+        if len(df_day) > 10:
     
-    if len(df_day) > 10:
-
-        position = list(fpairs['position'])
-        
-        amount = 10 # specify how much to buy and sell
-        amount_initial = 15
-        
-        # today = dt.datetime.strptime(today,"%Y-%m-%d %H:%M:%S")
-        
-        openpairs = []
-        closepairs = []
-        tradepairs = []
-        dashCard = {}
+            position = list(fpairs['position'])
             
+            amount = 10 # specify how much to buy and sell
+            amount_initial = 15
             
-        # loop through all pairs
-        if len(active_trades) > 0:
-            active_trades,trade_log,position,cash,closepairs,tradepairs = trade_active_pairs(fpairs,df_day,position,
-                                                                       active_trades,trade_log,today,amount,amount_initial,cash,closepairs,tradepairs)
-                
-        # loop through inactive pairs to activate them
-        active_trades,position,cash,openpairs = check_inactive_pairs(fpairs,df_day,position,active_trades,today,amount_initial,cash,openpairs)
-        
-        fpairs['position'] = position
+            # today = dt.datetime.strptime(today,"%Y-%m-%d %H:%M:%S")
             
-        
-        
-        # prepare variables for website ---------------------------------------
-        dashCard['open'] = len(openpairs) 
-        dashCard['trade'] = len(tradepairs)
-        dashCard['close'] = len(closepairs)   
-        dashCard['active'] = len(active_trades)
-        dashCard['update'] = dt.datetime.now().strftime("%b %d" + " at " "%I:%M %p")            
-        
-        
-        
-        # create json for active trades
-        active = []
-        cash['active'] = 0
-        cash['holding'] = 0
-        for name in list(active_trades):
-            
-            try:
-            
-                # calculate necessary values
-                t1 = active_trades[name][1][0]
-                t2 = active_trades[name][1][1]
-                
-                b = active_trades[name][1][2]
-                mean = active_trades[name][1][3]
-                std = active_trades[name][1][4]
-                zval = np.log10(df_day[t2]) - b * np.log10(df_day[t1])
-                zscore = (zval-mean)/std
-                
-                prof = ((sum(active_trades[name][0]['T1 Shares'])*df_day[t1]) + 
-                                (sum(active_trades[name][0]['T2 Shares'])*df_day[t2]) +
-                                sum(active_trades[name][0]['Overall Net']))
-                
-                if today != (active_trades[name][0]['Date'][0]):
-                    ret = (prof/amount_initial/2)*(365/(today-(active_trades[name][0]['Date'][0])).days)*100
-                else:
-                    ret = 0
+            openpairs = []
+            closepairs = []
+            tradepairs = []
+            dashCard = {}
                 
                 
-                
-                active.append({
-                    'Tick1': t1,
-                    'Tick2': t2,
-                    'T1price': df_day[t1],
-                    'T2price': df_day[t2],
-                    'T1shares': sum(active_trades[name][0]['T1 Shares']),
-                    'T2shares': sum(active_trades[name][0]['T2 Shares']),
-                    'Zscore': zscore,
-                    'Profit': prof,
-                    'Activity': (len(active_trades[name][0])-1)/2,
-                    'Return': ret,       
-                    })
-                
-                # calculate total assets in active trades
-                if abs(zscore)>8:
-                    cash['holding'] += (sum(active_trades[name][0]['T1 Shares'])*df_day[t1])+(sum(active_trades[name][0]['T2 Shares'])*df_day[t2])
-                else:
-                    cash['active'] += (sum(active_trades[name][0]['T1 Shares'])*df_day[t1])+(sum(active_trades[name][0]['T2 Shares'])*df_day[t2])
+            # loop through all pairs
+            if len(active_trades) > 0:
+                active_trades,trade_log,position,cash,closepairs,tradepairs = trade_active_pairs(fpairs,df_day,position,
+                                                                           active_trades,trade_log,today,amount,amount_initial,cash,closepairs,tradepairs)
                     
-            except:
-                pass
-        
-        
-        # End active trade loop-----------------------------------------------
-        
-        # create json for action list ------------------------------------------
-        catlist = openpairs+closepairs+tradepairs+tradepairs
-        
-        sharedict = {}
-        for row in catlist:
-            if row['Tick1'] in sharedict.keys():
-                sharedict[row['Tick1']] += row['T1shares']
-            else:
-                sharedict[row['Tick1']] = row['T1shares']
+            # loop through inactive pairs to activate them
+            active_trades,position,cash,openpairs = check_inactive_pairs(fpairs,df_day,position,active_trades,today,amount_initial,cash,openpairs)
+            
+            fpairs['position'] = position
                 
-            if row['Tick2'] in sharedict.keys():
-                sharedict[row['Tick2']] += row['T2shares']
-            else:
-                sharedict[row['Tick2']] = row['T2shares']
-        
-        actionlist = []
-        for key in list(sharedict):
-            actionlist.append({'tick': key,'price':df_day[key],'shares': sharedict[key],'cost': (df_day[key]*sharedict[key])})
             
-        # End of Action List loop ----------------------------------------------
-        
-        
-        # save the SP500 data
-        sp500comp = save_sp500(today,sp500comp,cash)
-        
-        with open('../stock_website/static/data/dashboard/sp500comp.json','w') as outfile:
-            json.dump(sp500comp,outfile,indent=4)
-        
-        # Save all necessary variables for the website
-        
-        # var for daily action tables
-        with open('../stock_website/static/data/openpairs.json','w') as outfile:
-            json.dump(openpairs,outfile,indent=4)    
-        with open('../stock_website/static/data/tradepairs.json','w') as outfile:
-            json.dump(tradepairs,outfile,indent=4) 
-        with open('../stock_website/static/data/closepairs.json','w') as outfile:
-            json.dump(closepairs,outfile,indent=4)
             
-        # var for action list
-        with open('../stock_website/static/data/actionlist.json','w') as outfile:
-            json.dump(actionlist,outfile,indent=4) 
+            # prepare variables for website ---------------------------------------
+            dashCard['open'] = len(openpairs) 
+            dashCard['trade'] = len(tradepairs)
+            dashCard['close'] = len(closepairs)   
+            dashCard['active'] = len(active_trades)
+            dashCard['update'] = dt.datetime.now().strftime("%b %d" + " at " "%I:%M %p")            
             
-        # var for dashboard cards
-        with open('../stock_website/static/data/dashboard/dashCard.json','w') as outfile:
-            json.dump(dashCard,outfile,indent=4)
-        
-        # var for active trades
-        with open('../stock_website/static/data/active.json','w') as outfile:
-            json.dump(active,outfile,indent=4)
             
-        # var for trade log
-        with open('../stock_website/static/data/tradelog.json','w') as outfile:
-            json.dump(trade_log,outfile,indent=4)
             
-        # var for asset pie chart
-        with open('../stock_website/static/data/dashboard/pieChart.json','w') as outfile:
-            json.dump(cash,outfile,indent=4)
-        
-    else:
+            # create json for active trades
+            active = []
+            cash['active'] = 0
+            cash['holding'] = 0
+            for name in list(active_trades):
+                
+                try:
+                
+                    # calculate necessary values
+                    t1 = active_trades[name][1][0]
+                    t2 = active_trades[name][1][1]
+                    
+                    b = active_trades[name][1][2]
+                    mean = active_trades[name][1][3]
+                    std = active_trades[name][1][4]
+                    zval = np.log10(df_day[t2]) - b * np.log10(df_day[t1])
+                    zscore = (zval-mean)/std
+                    
+                    prof = ((sum(active_trades[name][0]['T1 Shares'])*df_day[t1]) + 
+                                    (sum(active_trades[name][0]['T2 Shares'])*df_day[t2]) +
+                                    sum(active_trades[name][0]['Overall Net']))
+                    
+                    if today != (active_trades[name][0]['Date'][0]):
+                        ret = (prof/amount_initial/2)*(365/(today-(active_trades[name][0]['Date'][0])).days)*100
+                    else:
+                        ret = 0
+                    
+                    
+                    
+                    active.append({
+                        'Tick1': t1,
+                        'Tick2': t2,
+                        'T1price': df_day[t1],
+                        'T2price': df_day[t2],
+                        'T1shares': sum(active_trades[name][0]['T1 Shares']),
+                        'T2shares': sum(active_trades[name][0]['T2 Shares']),
+                        'Zscore': zscore,
+                        'Profit': prof,
+                        'Activity': (len(active_trades[name][0])-1)/2,
+                        'Return': ret,       
+                        })
+                    
+                    # calculate total assets in active trades
+                    if abs(zscore)>8:
+                        cash['holding'] += (sum(active_trades[name][0]['T1 Shares'])*df_day[t1])+(sum(active_trades[name][0]['T2 Shares'])*df_day[t2])
+                    else:
+                        cash['active'] += (sum(active_trades[name][0]['T1 Shares'])*df_day[t1])+(sum(active_trades[name][0]['T2 Shares'])*df_day[t2])
+                        
+                except:
+                    pass
+            
+            
+            # End active trade loop-----------------------------------------------
+            
+            # create json for action list ------------------------------------------
+            catlist = openpairs+closepairs+tradepairs+tradepairs
+            
+            sharedict = {}
+            for row in catlist:
+                if row['Tick1'] in sharedict.keys():
+                    sharedict[row['Tick1']] += row['T1shares']
+                else:
+                    sharedict[row['Tick1']] = row['T1shares']
+                    
+                if row['Tick2'] in sharedict.keys():
+                    sharedict[row['Tick2']] += row['T2shares']
+                else:
+                    sharedict[row['Tick2']] = row['T2shares']
+            
+            actionlist = []
+            for key in list(sharedict):
+                actionlist.append({'tick': key,'price':df_day[key],'shares': sharedict[key],'cost': (df_day[key]*sharedict[key])})
+                
+            # End of Action List loop ----------------------------------------------
+            
+            
+            # save the SP500 data
+            sp500comp = save_sp500(today,sp500comp,cash)
+            
+            with open('../stock_website/static/data/dashboard/sp500comp.json','w') as outfile:
+                json.dump(sp500comp,outfile,indent=4)
+            
+            # Save all necessary variables for the website
+            
+            # var for daily action tables
+            with open('../stock_website/static/data/openpairs.json','w') as outfile:
+                json.dump(openpairs,outfile,indent=4)    
+            with open('../stock_website/static/data/tradepairs.json','w') as outfile:
+                json.dump(tradepairs,outfile,indent=4) 
+            with open('../stock_website/static/data/closepairs.json','w') as outfile:
+                json.dump(closepairs,outfile,indent=4)
+                
+            # var for action list
+            with open('../stock_website/static/data/actionlist.json','w') as outfile:
+                json.dump(actionlist,outfile,indent=4) 
+                
+            # var for dashboard cards
+            with open('../stock_website/static/data/dashboard/dashCard.json','w') as outfile:
+                json.dump(dashCard,outfile,indent=4)
+            
+            # var for active trades
+            with open('../stock_website/static/data/active.json','w') as outfile:
+                json.dump(active,outfile,indent=4)
+                
+            # var for trade log
+            with open('../stock_website/static/data/tradelog.json','w') as outfile:
+                json.dump(trade_log,outfile,indent=4)
+                
+            # var for asset pie chart
+            with open('../stock_website/static/data/dashboard/pieChart.json','w') as outfile:
+                json.dump(cash,outfile,indent=4)
+            
+        else:
+            print('Market not open today.')
+            
+    except:
         print('Market not open today.')
     
     return fpairs,active_trades,trade_log,cash,sp500comp
@@ -773,7 +777,7 @@ else:
           
 
     
-today = dt.datetime.date(dt.datetime.now()) - BDay(1)
+today = dt.datetime.date(dt.datetime.now())
 
 # define the specific day
 yesterday = (today - BDay(1))
